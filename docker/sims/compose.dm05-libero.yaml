@@ -1,0 +1,43 @@
+# Overlay compose.yaml for a DM05 LIBERO rollout with live Foxglove cameras.
+services:
+  sim:
+    image: lerobot-sim-libero:dm05-demo
+    build:
+      dockerfile: docker/Dockerfile.sim.libero
+    command:
+    - lerobot-sim-server
+    - --config
+    - /lerobot/docker/sims/configs/libero_dm05.yaml
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - from lerobot.sim_server.client import SimClient; c=SimClient('tcp/127.0.0.1:7448',
+        'libero', 5); c.describe(); c.close()
+  driver:
+    image: lerobot-policy:dm05-demo
+    build:
+      args:
+        POLICY_EXTRAS: remote evaluation dm05 training hardware viz
+    ports:
+    - 127.0.0.1:8765:8765
+    command:
+    - lerobot-rollout
+    - --robot.type=sim
+    - --robot.endpoint=tcp/sim:7448
+    - --robot.deployment=libero
+    - --robot.profile=/profiles/libero_dm05.yaml
+    - --robot.task=libero_spatial
+    - --robot.task_id=0
+    - --policy.path=lerobot/dm05_libero
+    - --policy.pretrained_revision=888536eab92669fe8fe36c0049c50563ccb67236
+    - --device=cuda
+    - --fps=20
+    - --inference.type=sync
+    - --display_data=true
+    - --display_mode=foxglove
+    - --display_ip=0.0.0.0
+    - --display_port=8765
+    - --return_to_initial_position=false
+    - --play_sounds=false

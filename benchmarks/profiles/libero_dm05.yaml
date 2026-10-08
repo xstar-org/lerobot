@@ -1,0 +1,23 @@
+semantics: libero-delta-v1
+control: delta
+feature_mapping:
+  observation.images.camera1: observation.images.front
+  observation.images.camera2: observation.images.wrist
+state_names:
+- eef.x
+- eef.y
+- eef.z
+- eef.axis_angle.x
+- eef.axis_angle.y
+- eef.axis_angle.z
+- gripper.left.pos
+- gripper.right.pos
+action_names:
+- action_0
+- action_1
+- action_2
+- action_3
+- action_4
+- action_5
+- action_6
+empty_cameras: 0

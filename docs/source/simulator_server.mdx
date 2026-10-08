@@ -71,3 +71,47 @@ LIBERO runtime images use converted NumPy initial-state files. The image build c
 5. Test adapter parity and seeded transitions before comparing checkpoint results. Record any baseline changes caused by simulator version changes.
 
 CI builds the policy image from the tested checkout and dependency lock. Simulator image identities include backend code, shared wire contracts, build arguments, and asset/dependency declarations. Persistent BuildKit caches retain heavy native builds. CI fails on crashes, admission mismatch, or missing/invalid evaluation metrics; 0% success is a valid smoke result. Statistical baseline gating remains separate work.
+
+## DM05 LIBERO with live cameras
+
+The public `lerobot/dm05_libero` checkpoint declares eight state values, seven actions named `action_0` through `action_6`, and two 256×256 cameras named `front` and `wrist`. Unlike the older smoke checkpoints, it fits strict admission with a matching simulator configuration. The dedicated example preserves the native LIBERO action order (translation xyz, rotation axis-angle xyz, gripper), uses the relative controller, and sets no placeholder cameras. It leaves the checkpoint metadata unchanged.
+
+From the repository root, run:
+
+```bash
+docker compose -f docker/sims/compose.yaml -f docker/sims/compose.dm05-libero.yaml \
+  up --build --abort-on-container-exit --exit-code-from driver sim driver
+```
+
+Open the Foxglove app, choose **Open connection → Foxglove WebSocket**, and connect to `ws://localhost:8765`. Add two Image panels for `/observation/images/front` and `/observation/images/wrist`. The viewer shows the RGB frames seen by the policy; this example does not expose a native interactive 3D simulator window. The rollout stops when the world finishes. Rerun the driver for another episode, or override `--robot.task_id` to select another spatial task.
+
+The overlay builds the policy image with DM05 and visualization dependencies, uses `docker/sims/configs/libero_dm05.yaml`, loads `benchmarks/profiles/libero_dm05.yaml`, and pins checkpoint revision `888536eab92669fe8fe36c0049c50563ccb67236`. It requires working Docker GPU access. The schema and Compose configuration have been checked; full DM05 inference still requires GPU validation.
+
+For lockstep evaluation and saved videos instead of realtime rollout, start the same simulator:
+
+```bash
+docker compose -f docker/sims/compose.yaml -f docker/sims/compose.dm05-libero.yaml up -d --build sim
+```
+
+Then run the evaluation driver:
+
+```bash
+docker compose -f docker/sims/compose.yaml -f docker/sims/compose.dm05-libero.yaml \
+  run --rm driver lerobot-eval \
+  --policy.path=lerobot/dm05_libero \
+  --policy.pretrained_revision=888536eab92669fe8fe36c0049c50563ccb67236 \
+  --policy.device=cuda \
+  --env.type=sim --env.endpoint=tcp/sim:7448 --env.deployment=libero \
+  --env.task=libero_spatial --env.task_ids='[0]' \
+  --eval.profile=/profiles/libero_dm05.yaml \
+  --eval.n_episodes=1 --eval.batch_size=1 --seed=7 \
+  --output_dir=/artifacts
+```
+
+For benchmark numbers, use lockstep evaluation: realtime rollout uses the existing wall clock and consumes zero-motion holds between policy commands, so it does not reproduce lockstep evaluation timing.
+
+Stop the services afterward:
+
+```bash
+docker compose -f docker/sims/compose.yaml -f docker/sims/compose.dm05-libero.yaml down
+```

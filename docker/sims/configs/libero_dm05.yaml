@@ -1,0 +1,43 @@
+# DM05 labels preserve native LIBERO order: xyz, axis-angle xyz, gripper.
+deployment: libero
+sim:
+  type: libero
+  task: libero_spatial
+  fps: 20
+  control: delta
+  semantics: libero-delta-v1
+  kwargs:
+    gym_kwargs:
+      obs_type: pixels_agent_pos
+      render_mode: rgb_array
+      observation_height: 256
+      observation_width: 256
+      control_freq: 20
+      hard_reset: true
+    camera_name: agentview_image,robot0_eye_in_hand_image
+    init_states: true
+    control_mode: relative
+    episode_length: null
+    camera_name_mapping:
+      agentview_image: camera1
+      robot0_eye_in_hand_image: camera2
+    is_libero_plus: false
+  state_names:
+  - eef.x
+  - eef.y
+  - eef.z
+  - eef.axis_angle.x
+  - eef.axis_angle.y
+  - eef.axis_angle.z
+  - gripper.left.pos
+  - gripper.right.pos
+  action_names:
+  - action_0
+  - action_1
+  - action_2
+  - action_3
+  - action_4
+  - action_5
+  - action_6
+  gripper_indices:
+  - 6
