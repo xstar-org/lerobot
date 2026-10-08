@@ -16,6 +16,7 @@
 
 from .config import RobotConfig
 from .robot import Robot
+from .sim.configuration_sim import SimRobotConfig as SimRobotConfig
 from .utils import make_robot_from_config
 
 __all__ = ["Robot", "RobotConfig", "make_robot_from_config"]
