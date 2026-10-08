@@ -92,7 +92,8 @@ The overlay builds the policy image with DM05 and visualization dependencies, us
 Install the host policy environment from this worktree, which includes the `sim` robot driver:
 
 ```bash
-uv sync --locked --extra remote --extra evaluation --extra dm05 \
+uv sync --locked --default-index https://pypi.org/simple --python 3.12 \
+  --extra remote --extra evaluation --extra dm05 \
   --extra training --extra hardware --extra viz
 ```
 
@@ -104,10 +105,10 @@ uv run scripts/run_sim.py docker/sims/configs/libero.yaml \
   --set sim.kwargs.gym_kwargs.observation_width=256
 ```
 
-Then run the regular rollout CLI locally. Simulator packages such as LIBERO and MuJoCo stay in the container:
+Run these commands from this worktree. `--no-sync` requires the installation above: an empty environment can otherwise resolve `lerobot-rollout` from an unrelated Conda installation on your PATH. Use the Python module invocation below to select the project interpreter explicitly. Simulator packages such as LIBERO and MuJoCo stay in the container:
 
 ```bash
-uv run --no-sync lerobot-rollout \
+uv run --no-sync python -m lerobot.scripts.lerobot_rollout \
   --robot.type=sim --robot.endpoint=tcp/127.0.0.1:7448 \
   --robot.deployment=libero --robot.profile=benchmarks/profiles/libero_dm05.yaml \
   --robot.task=libero_spatial --robot.task_id=0 \
