@@ -99,7 +99,7 @@ uv sync --locked --extra remote --extra evaluation --extra dm05 \
 Start only the simulator with a native YAML and optional CLI overrides. The launcher reads `sim.type` to select the image, mounts the configuration at runtime, and publishes localhost port 7448. No policy configuration or Compose overlay is needed:
 
 ```bash
-uv run --no-sync python scripts/run_sim.py docker/sims/configs/libero.yaml \
+uv run scripts/run_sim.py docker/sims/configs/libero.yaml \
   --set sim.kwargs.gym_kwargs.observation_height=256 \
   --set sim.kwargs.gym_kwargs.observation_width=256
 ```

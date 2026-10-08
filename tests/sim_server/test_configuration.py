@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -6,6 +8,25 @@ import pytest
 import yaml
 
 from lerobot.sim_server.configuration import load_config
+
+
+def test_launcher_runs_without_installed_lerobot(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts/run_sim.py"
+    config = tmp_path / "sim.yaml"
+    config.write_text("sim:\n  type: libero\n  task: libero_spatial\n")
+    docker = tmp_path / "docker"
+    docker.write_text('#!/bin/sh\nprintf "%s\\n" "$SIM" "$SIM_CONFIG"\n')
+    docker.chmod(0o700)
+    result = subprocess.run(
+        [sys.executable, "-I", str(script), str(config), "--set", "sim.task=libero_goal", "--no-build"],
+        env={**os.environ, "PATH": str(tmp_path)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    backend, effective_config = result.stdout.strip().splitlines()
+    assert backend == "libero"
+    assert yaml.safe_load(Path(effective_config).read_text())["sim"]["task"] == "libero_goal"
 
 
 def test_native_config_overrides_preserve_source(tmp_path):

@@ -1,15 +1,18 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["PyYAML>=6,<7"]
+# ///
 """Start an isolated Docker simulator selected by its native configuration YAML."""
 
 import argparse
 import hashlib
 import os
+import runpy
 import subprocess
 import tempfile
 from pathlib import Path
 
 import yaml
-
-from lerobot.sim_server.configuration import load_config
 
 
 def main() -> None:
@@ -23,7 +26,9 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     config = args.config.resolve(strict=True)
-    data = load_config(config, args.set)
+    # Load the shared torch-free reader from this checkout, without installing LeRobot.
+    reader = runpy.run_path(str(root / "src/lerobot/sim_server/configuration.py"))
+    data = reader["load_config"](config, args.set)
     backend = data["sim"]["type"]
     supported = {
         path.name.removeprefix("Dockerfile.sim.") for path in (root / "docker").glob("Dockerfile.sim.*")
