@@ -1,0 +1,71 @@
+"""Declarative mappings and explicit simulator semantics for evaluation admission."""
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+from .contracts import SimDescriptor
+
+
+@dataclass
+class EvalProfile:
+    """Declare an explicit checkpoint mapping and controller convention."""
+
+    semantics: str
+    feature_mapping: dict[str, str] = field(default_factory=dict)
+    state_names: list[str] = field(default_factory=list)
+    action_names: list[str] = field(default_factory=list)
+    empty_cameras: int = 0
+    control: str = "delta"
+
+    @classmethod
+    def load(cls, path: str):
+        """Read a declarative evaluation profile from YAML."""
+        return cls(**yaml.safe_load(Path(path).read_text()))
+
+    def validate_descriptor(self, descriptor: SimDescriptor):
+        """Reject schema mappings and conventions incompatible with the simulator."""
+        if self.semantics != descriptor.semantics or self.control != descriptor.control:
+            raise ValueError("Evaluation profile semantics/controller do not match the simulator")
+        names = {f.name for f in descriptor.features}
+        if set(self.feature_mapping) - names:
+            raise ValueError("Profile maps observation keys absent from the simulator")
+        targets = [self.feature_mapping.get(name, name) for name in names]
+        if len(set(targets)) != len(targets):
+            raise ValueError("Evaluation feature mapping must be one-to-one")
+        state = next((f for f in descriptor.features if f.name == "observation.state"), None)
+        if self.state_names and (state is None or tuple(self.state_names) != state.names):
+            raise ValueError("Simulator state component order differs from the profile")
+        if self.action_names and tuple(self.action_names) != descriptor.action_feature.names:
+            raise ValueError("Simulator action component order differs from the profile")
+
+    def validate_policy(self, descriptor: SimDescriptor, config):
+        """Check simulator features against the authoritative checkpoint declaration."""
+        self.validate_descriptor(descriptor)
+        if getattr(config, "empty_cameras", 0) != self.empty_cameras:
+            raise ValueError("Checkpoint empty-camera configuration differs from the profile")
+        available = {self.feature_mapping.get(f.name, f.name): f for f in descriptor.features}
+        empty = {f"observation.images.empty_camera_{i}" for i in range(self.empty_cameras)}
+        for name, expected in config.input_features.items():
+            if name in empty:
+                if tuple(expected.shape) != (3, 480, 640):
+                    raise ValueError("Checkpoint empty-camera shape is invalid")
+                continue
+            if name not in available:
+                raise ValueError(f"Checkpoint feature missing from simulator/profile: {name}")
+            actual = available[name]
+            shape = (
+                (actual.shape[2], actual.shape[0], actual.shape[1]) if actual.kind == "rgb" else actual.shape
+            )
+            if tuple(expected.shape) != shape:
+                raise ValueError(
+                    f"Checkpoint feature shape mismatch for {name}: expected {expected.shape}, got {shape}"
+                )
+        if "action" not in config.output_features:
+            raise ValueError("Checkpoint must declare the canonical action feature")
+        if tuple(config.output_features["action"].shape) != descriptor.action_feature.shape:
+            raise ValueError("Checkpoint action dimension differs from the simulator")
+        checkpoint_names = getattr(config, "action_feature_names", None)
+        if checkpoint_names and tuple(checkpoint_names) != descriptor.action_feature.names:
+            raise ValueError("Checkpoint action component order differs from the simulator")
