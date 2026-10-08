@@ -2,12 +2,16 @@
 services:
   sim:
     image: lerobot-sim-libero:dm05-demo
+    ports:
+    - 127.0.0.1:7448:7448
+    volumes:
+    - ./configs/libero_256.yaml:/config/sim.yaml:ro
     build:
       dockerfile: docker/Dockerfile.sim.libero
     command:
     - lerobot-sim-server
     - --config
-    - /lerobot/docker/sims/configs/libero_dm05.yaml
+    - /config/sim.yaml
     healthcheck:
       test:
       - CMD

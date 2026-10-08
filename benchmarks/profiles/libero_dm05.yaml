@@ -13,11 +13,19 @@ state_names:
 - gripper.left.pos
 - gripper.right.pos
 action_names:
-- action_0
-- action_1
-- action_2
-- action_3
-- action_4
-- action_5
-- action_6
+- eef.delta.x
+- eef.delta.y
+- eef.delta.z
+- eef.delta.axis_angle.x
+- eef.delta.axis_angle.y
+- eef.delta.axis_angle.z
+- gripper.command
 empty_cameras: 0
+action_name_mapping:
+  eef.delta.x: action_0
+  eef.delta.y: action_1
+  eef.delta.z: action_2
+  eef.delta.axis_angle.x: action_3
+  eef.delta.axis_angle.y: action_4
+  eef.delta.axis_angle.z: action_5
+  gripper.command: action_6

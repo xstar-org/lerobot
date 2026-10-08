@@ -1,0 +1,46 @@
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+from lerobot.sim_server.configuration import load_config
+
+
+def test_native_config_overrides_preserve_source(tmp_path):
+    path = tmp_path / "sim.yaml"
+    source = "sim:\n  type: libero\n  task: libero_spatial\n  kwargs:\n    init_states: true\n"
+    path.write_text(source)
+    data = load_config(path, ["sim.task=libero_goal", "sim.kwargs.init_states=false"])
+    assert data["sim"]["task"] == "libero_goal"
+    assert data["sim"]["kwargs"]["init_states"] is False
+    assert path.read_text() == source
+    for override in ["sim.typo=1", "sim.task.typo=1", "sim..task=foo", "sim.task"]:
+        with pytest.raises(ValueError):
+            load_config(path, [override])
+
+
+def test_launcher_selects_backend_from_overridden_config(tmp_path, monkeypatch):
+    script = Path(__file__).resolve().parents[2] / "scripts/run_sim.py"
+    spec = importlib.util.spec_from_file_location("run_sim", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    config = tmp_path / "sim.yaml"
+    config.write_text("sim:\n  type: libero\n  task: libero_spatial\n")
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+    monkeypatch.setattr(
+        sys, "argv", [str(script), str(config), "--set", "sim.task=libero_goal", "--no-build"]
+    )
+    module.main()
+    command, options = calls[0]
+    assert command[-4:] == ["up", "-d", "--wait", "sim"]
+    assert options["env"]["SIM"] == "libero"
+    mounted = Path(options["env"]["SIM_CONFIG"])
+    assert yaml.safe_load(mounted.read_text())["sim"]["task"] == "libero_goal"
+    assert yaml.safe_load(config.read_text())["sim"]["task"] == "libero_spatial"
+    config.write_text("sim:\n  type: invalid-backend\n  task: libero_spatial\n")
+    with pytest.raises(SystemExit):
+        module.main()
+    assert len(calls) == 1

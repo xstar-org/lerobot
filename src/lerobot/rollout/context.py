@@ -706,7 +706,7 @@ def build_remote_rollout_context(
         def validate_simulator(robot: SimRobot) -> None:
             if config.semantics != robot.descriptor.semantics:
                 raise ValueError("Remote deployment semantics differ from simulator semantics")
-            if action != robot.descriptor.action_feature:
+            if action != replace(robot.descriptor.action_feature, names=robot.policy_action_names):
                 raise ValueError("Remote action declaration differs from simulator declaration")
             mapping = robot.profile.feature_mapping if robot.profile else {}
             declared = {

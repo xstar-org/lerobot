@@ -3,10 +3,8 @@
 import argparse
 import logging
 import signal
-from pathlib import Path
 
-import yaml
-
+from lerobot.sim_server.configuration import load_config
 from lerobot.sim_server.server import ServerConfig, SimServer
 from lerobot.sims.backend import BackendConfig
 from lerobot.transport.zenoh import ZenohConfig
@@ -15,8 +13,9 @@ from lerobot.transport.zenoh import ZenohConfig
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     args = parser.parse_args()
-    data = yaml.safe_load(Path(args.config).read_text())
+    data = load_config(args.config, args.set)
     data["sim"] = BackendConfig(**data["sim"])
     if "zenoh" in data:
         data["zenoh"] = ZenohConfig(**data["zenoh"])

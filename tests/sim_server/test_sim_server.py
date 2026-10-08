@@ -203,6 +203,27 @@ def test_partial_reset_preserves_other_terminal_world(server):
         client.close()
 
 
+def test_sim_robot_action_aliases_preserve_controller_order(server, tmp_path):
+    from lerobot.robots.sim import SimRobot, SimRobotConfig
+
+    profile = tmp_path / "profile.yaml"
+    profile.write_text(
+        "semantics: toy-delta-v1\ncontrol: delta\n"
+        "action_name_mapping:\n  command_0: action_0\n  command_1: action_1\n"
+    )
+    robot = SimRobot(SimRobotConfig(endpoint=server[1], profile=str(profile), calibration_dir=tmp_path))
+    try:
+        assert robot.descriptor.action_feature.names == ("command_0", "command_1")
+        assert tuple(robot.action_features) == ("action_0", "action_1")
+        robot.connect()
+        assert robot.send_action({"action_1": 0.75, "action_0": 0.25}) == {
+            "action_0": 0.25,
+            "action_1": 0.75,
+        }
+    finally:
+        robot.disconnect()
+
+
 def test_eval_profile_admission(server):
     from dataclasses import replace
     from types import SimpleNamespace
@@ -229,6 +250,17 @@ def test_eval_profile_admission(server):
         replace(profile, semantics="wrong").validate_policy(descriptor, config)
     with pytest.raises(ValueError, match="component order"):
         replace(profile, action_names=["command_1", "command_0"]).validate_policy(descriptor, config)
+    aliased = replace(profile, action_name_mapping={"command_0": "action_0", "command_1": "action_1"})
+    config.action_feature_names = ["action_0", "action_1"]
+    aliased.validate_policy(descriptor, config)
+    with pytest.raises(ValueError, match="component order"):
+        config.action_feature_names = ["action_1", "action_0"]
+        aliased.validate_policy(descriptor, config)
+    with pytest.raises(ValueError, match="absent"):
+        replace(profile, action_name_mapping={"unknown": "action_0"}).validate_descriptor(descriptor)
+    with pytest.raises(ValueError, match="one-to-one"):
+        replace(profile, action_name_mapping={"command_0": "command_1"}).validate_descriptor(descriptor)
+    del config.action_feature_names
     config.input_features["observation.state"] = PolicyFeature(FeatureType.STATE, (3,))
     with pytest.raises(ValueError, match="shape mismatch"):
         profile.validate_policy(descriptor, config)
@@ -290,7 +322,12 @@ def test_sim_robot_local_inference_engines(server, tmp_path, mode):
     from lerobot.rollout.robot_wrapper import ThreadSafeRobot
     from tests.inference.test_local_rtc_regressions import ControlledPolicy, Pipeline, wait_for
 
-    robot = SimRobot(SimRobotConfig(endpoint=server[1], calibration_dir=tmp_path))
+    profile = tmp_path / "aliases.yaml"
+    profile.write_text(
+        "semantics: toy-delta-v1\ncontrol: delta\n"
+        "action_name_mapping:\n  command_0: action_0\n  command_1: action_1\n"
+    )
+    robot = SimRobot(SimRobotConfig(endpoint=server[1], profile=str(profile), calibration_dir=tmp_path))
     wrapper = ThreadSafeRobot(robot)
     names = list(robot.action_features)
     state_names = list(robot._state.names)

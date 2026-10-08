@@ -63,7 +63,15 @@ class SimRobot(Robot):
 
     @property
     def action_features(self):
-        return dict.fromkeys(self.descriptor.action_feature.names, float)
+        return dict.fromkeys(self.policy_action_names, float)
+
+    @property
+    def policy_action_names(self):
+        return (
+            self.profile.policy_action_names(self.descriptor)
+            if self.profile
+            else self.descriptor.action_feature.names
+        )
 
     @property
     def is_connected(self):
@@ -99,7 +107,7 @@ class SimRobot(Robot):
         }
 
     def send_action(self, action):
-        names = self.descriptor.action_feature.names
+        names = self.policy_action_names
         if set(action) != set(names):
             raise ValueError("Sim action must contain exactly the declared components")
         values = np.asarray([[action[name] for name in names]], dtype=np.float32)

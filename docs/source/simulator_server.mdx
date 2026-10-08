@@ -74,7 +74,7 @@ CI builds the policy image from the tested checkout and dependency lock. Simulat
 
 ## DM05 LIBERO with live cameras
 
-The public `lerobot/dm05_libero` checkpoint declares eight state values, seven actions named `action_0` through `action_6`, and two 256×256 cameras named `front` and `wrist`. Unlike the older smoke checkpoints, it fits strict admission with a matching simulator configuration. The dedicated example preserves the native LIBERO action order (translation xyz, rotation axis-angle xyz, gripper), uses the relative controller, and sets no placeholder cameras. It leaves the checkpoint metadata unchanged.
+The public `lerobot/dm05_libero` checkpoint declares eight state values, seven actions named `action_0` through `action_6`, and two 256×256 cameras named `front` and `wrist`. Unlike the older smoke checkpoints, it fits strict admission with a matching simulator configuration. The dedicated example preserves the native LIBERO action order (translation xyz, rotation axis-angle xyz, gripper), uses the relative controller, and sets no placeholder cameras. The server retains native semantic action names; the client profile aliases them to `action_0` through `action_6` without changing order or checkpoint metadata. It leaves the checkpoint metadata unchanged.
 
 From the repository root, run:
 
@@ -85,7 +85,52 @@ docker compose -f docker/sims/compose.yaml -f docker/sims/compose.dm05-libero.ya
 
 Open the Foxglove app, choose **Open connection → Foxglove WebSocket**, and connect to `ws://localhost:8765`. Add two Image panels for `/observation/images/front` and `/observation/images/wrist`. The viewer shows the RGB frames seen by the policy; this example does not expose a native interactive 3D simulator window. The rollout stops when the world finishes. Rerun the driver for another episode, or override `--robot.task_id` to select another spatial task.
 
-The overlay builds the policy image with DM05 and visualization dependencies, uses `docker/sims/configs/libero_dm05.yaml`, loads `benchmarks/profiles/libero_dm05.yaml`, and pins checkpoint revision `888536eab92669fe8fe36c0049c50563ccb67236`. It requires working Docker GPU access. The schema and Compose configuration have been checked; full DM05 inference still requires GPU validation.
+The overlay builds the policy image with DM05 and visualization dependencies, uses `docker/sims/configs/libero_256.yaml`, loads `benchmarks/profiles/libero_dm05.yaml`, and pins checkpoint revision `888536eab92669fe8fe36c0049c50563ccb67236`. It requires working Docker GPU access. The schema and Compose configuration have been checked; full DM05 inference still requires GPU validation.
+
+### Simulator in Docker, rollout on the host
+
+Install the host policy environment from this worktree, which includes the `sim` robot driver:
+
+```bash
+uv sync --locked --extra remote --extra evaluation --extra dm05 \
+  --extra training --extra hardware --extra viz
+```
+
+Start only the simulator with a native YAML and optional CLI overrides. The launcher reads `sim.type` to select the image, mounts the configuration at runtime, and publishes localhost port 7448. No policy configuration or Compose overlay is needed:
+
+```bash
+uv run --no-sync python scripts/run_sim.py docker/sims/configs/libero.yaml \
+  --set sim.kwargs.gym_kwargs.observation_height=256 \
+  --set sim.kwargs.gym_kwargs.observation_width=256
+```
+
+Then run the regular rollout CLI locally. Simulator packages such as LIBERO and MuJoCo stay in the container:
+
+```bash
+uv run --no-sync lerobot-rollout \
+  --robot.type=sim --robot.endpoint=tcp/127.0.0.1:7448 \
+  --robot.deployment=libero --robot.profile=benchmarks/profiles/libero_dm05.yaml \
+  --robot.task=libero_spatial --robot.task_id=0 \
+  --policy.path=lerobot/dm05_libero \
+  --policy.pretrained_revision=888536eab92669fe8fe36c0049c50563ccb67236 \
+  --device=cuda --fps=20 --inference.type=sync \
+  --display_data=true --display_mode=foxglove \
+  --display_ip=127.0.0.1 --display_port=8765 \
+  --return_to_initial_position=false --play_sounds=false
+```
+
+Connect Foxglove to `ws://localhost:8765` as above. On a host with a desktop, `--display_mode=rerun` instead opens the local Rerun viewer. Policy inference uses the host's CUDA installation; the simulator container still needs working Docker GPU access for EGL rendering.
+
+You can use `docker/sims/configs/libero_256.yaml` without overrides for the same camera resolution. Swap the YAML to select another backend, for example `docker/sims/configs/metaworld.yaml`. The client must use a compatible checkpoint, deployment, and profile. Controller semantics, render resolution, and available tasks remain native server settings; label mappings belong in client profiles. Overrides only accept existing dotted keys, parse values as YAML, and leave the source file unchanged. The launcher retains the effective configuration in a temporary cache for container restarts; rerun it after a host reboot. Switching configuration recreates the server and ends active sessions.
+
+Stop the standalone server with the same command plus `--stop`, or reuse an image with `--no-build`. For native startup outside Docker, the same overrides work directly:
+
+```bash
+lerobot-sim-server --config=docker/sims/configs/libero.yaml \
+  --set sim.task=libero_goal \
+  --set sim.kwargs.gym_kwargs.observation_height=256 \
+  --set sim.kwargs.gym_kwargs.observation_width=256
+```
 
 For lockstep evaluation and saved videos instead of realtime rollout, start the same simulator:
 

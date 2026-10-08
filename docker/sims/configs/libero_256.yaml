@@ -1,4 +1,4 @@
-# DM05 labels preserve native LIBERO order: xyz, axis-angle xyz, gripper.
+# Native LIBERO with 256x256 cameras; checkpoint aliases belong in client profiles.
 deployment: libero
 sim:
   type: libero
@@ -32,12 +32,12 @@ sim:
   - gripper.left.pos
   - gripper.right.pos
   action_names:
-  - action_0
-  - action_1
-  - action_2
-  - action_3
-  - action_4
-  - action_5
-  - action_6
+  - eef.delta.x
+  - eef.delta.y
+  - eef.delta.z
+  - eef.delta.axis_angle.x
+  - eef.delta.axis_angle.y
+  - eef.delta.axis_angle.z
+  - gripper.command
   gripper_indices:
   - 6

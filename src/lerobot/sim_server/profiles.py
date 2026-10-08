@@ -16,6 +16,7 @@ class EvalProfile:
     feature_mapping: dict[str, str] = field(default_factory=dict)
     state_names: list[str] = field(default_factory=list)
     action_names: list[str] = field(default_factory=list)
+    action_name_mapping: dict[str, str] = field(default_factory=dict)
     empty_cameras: int = 0
     control: str = "delta"
 
@@ -39,6 +40,17 @@ class EvalProfile:
             raise ValueError("Simulator state component order differs from the profile")
         if self.action_names and tuple(self.action_names) != descriptor.action_feature.names:
             raise ValueError("Simulator action component order differs from the profile")
+        self.policy_action_names(descriptor)
+
+    def policy_action_names(self, descriptor: SimDescriptor) -> tuple[str, ...]:
+        """Alias component labels while preserving the native controller order."""
+        names = descriptor.action_feature.names
+        if set(self.action_name_mapping) - set(names):
+            raise ValueError("Profile maps action components absent from the simulator")
+        mapped = tuple(self.action_name_mapping.get(name, name) for name in names)
+        if len(set(mapped)) != len(mapped) or any(not name for name in mapped):
+            raise ValueError("Action component mapping must be one-to-one with nonempty labels")
+        return mapped
 
     def validate_policy(self, descriptor: SimDescriptor, config):
         """Check simulator features against the authoritative checkpoint declaration."""
@@ -67,5 +79,5 @@ class EvalProfile:
         if tuple(config.output_features["action"].shape) != descriptor.action_feature.shape:
             raise ValueError("Checkpoint action dimension differs from the simulator")
         checkpoint_names = getattr(config, "action_feature_names", None)
-        if checkpoint_names and tuple(checkpoint_names) != descriptor.action_feature.names:
+        if checkpoint_names and tuple(checkpoint_names) != self.policy_action_names(descriptor):
             raise ValueError("Checkpoint action component order differs from the simulator")
