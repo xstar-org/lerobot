@@ -13,10 +13,10 @@ import torch
 from lerobot.configs import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.lerobot_types import TransitionKey
 from lerobot.policies.pi05.configuration_pi05 import PI05Config
-from lerobot.policies.pi05.processor_openpi import (
+from lerobot.policies.pi05.processor_pi05 import (
     OpenPITextTokenizerProcessorStep,
+    make_pi05_pre_post_processors,
 )
-from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
 from lerobot.processor import NormalizerProcessorStep, UnnormalizerProcessorStep
 from lerobot.processor.factory import load_pretrained_policy_processors
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
