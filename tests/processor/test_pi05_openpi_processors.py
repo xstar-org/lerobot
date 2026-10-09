@@ -1,6 +1,9 @@
 """CPU-only tests: no checkpoint download, GPU, simulator, or gated tokenizer required."""
 
 import io
+import json
+import os
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -155,3 +158,49 @@ def test_pretrained_loading_never_returns_unloaded_model(read_error):
         )
     assert cached.call_args.kwargs["revision"] == "pinned"
     assert cached.call_args.kwargs["local_files_only"] is True
+
+
+@pytest.mark.skipif(
+    not os.environ.get("PI05_PARITY_DIR"), reason="Requires locally recorded OpenPI observations"
+)
+def test_recorded_openpi_processor_parity(tmp_path):
+    """Optional integration gate against real OpenPI tensors; fixtures are never downloaded.
+
+    PI05_PARITY_DIR contains fixed-observations.npz and native-30000-float32/outputs.npz.
+    PI05_PARITY_STATS and PI05_PARITY_TOKENIZER point to the training checkpoint's files.
+    """
+    root = Path(os.environ["PI05_PARITY_DIR"])
+    raw = np.load(root / "fixed-observations.npz")
+    native = np.load(root / "native-30000-float32/outputs.npz")
+    source = json.loads(Path(os.environ["PI05_PARITY_STATS"]).read_text())["norm_stats"]
+    images = {"observation.images.image": "image", "observation.images.image2": "wrist"}
+    cfg = PI05Config(
+        device="cpu",
+        openpi_text_only=True,
+        openpi_quantile_normalization=True,
+        openpi_image_resize=True,
+        text_tokenizer_name=os.environ["PI05_PARITY_TOKENIZER"],
+        input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (8,))}
+        | {key: PolicyFeature(FeatureType.VISUAL, (3, 256, 256)) for key in images},
+        output_features={ACTION: PolicyFeature(FeatureType.ACTION, (7,))},
+        chunk_size=10,
+        n_action_steps=10,
+    )
+    stats = {OBS_STATE: source["state"], ACTION: source["actions"]}
+    pre, post = make_pi05_pre_post_processors(cfg, stats)
+    pre.save_pretrained(tmp_path)
+    post.save_pretrained(tmp_path)
+    pre, post = load_pretrained_policy_processors(tmp_path)
+    batch = {OBS_STATE: torch.from_numpy(raw["state"]), "task": raw["prompt"].tolist()}
+    batch.update(
+        {key: torch.from_numpy(raw[name]).permute(0, 3, 1, 2).float() / 255 for key, name in images.items()}
+    )
+    actual = pre(batch)
+    for key, name in ((OBS_LANGUAGE_TOKENS, "tokens"), (OBS_LANGUAGE_ATTENTION_MASK, "masks")):
+        np.testing.assert_array_equal(actual[key].numpy(), native[name])
+    np.testing.assert_allclose(actual[OBS_STATE].numpy(), native["state"][:, :8], rtol=0, atol=1e-6)
+    for key, name in images.items():
+        pixels = (actual[key].permute(0, 2, 3, 1) * 255).round().byte().numpy()
+        np.testing.assert_array_equal(pixels, native[name])
+    actions = post(torch.from_numpy(native["normalized_actions"][:, :, :7])).numpy()
+    np.testing.assert_allclose(actions, native["actions"], rtol=0, atol=1e-6)
