@@ -37,7 +37,7 @@ from lerobot.processor import (
 from lerobot.utils.constants import OBS_STATE
 
 from .configuration_pi05 import PI05Config
-from .processor_openpi import OpenPIImageResizeProcessorStep, OpenPITextTokenizerProcessorStep
+from .processor_openpi import OpenPITextTokenizerProcessorStep
 
 
 @ProcessorStepRegistry.register(name="pi05_prepare_state_tokenizer_processor_step")
@@ -151,7 +151,7 @@ def make_pi05_pre_post_processors(
             step.eps = 1e-6
             step.quantile_eps_additive = True
 
-    if config.openpi_text_only:
+    if config.openpi_prompt_without_state:
         language_steps = [
             OpenPITextTokenizerProcessorStep(
                 tokenizer_name=config.text_tokenizer_name,
@@ -177,11 +177,6 @@ def make_pi05_pre_post_processors(
     input_steps: list[ProcessorStep] = [
         steps.rename_observations,  # To mimic the same processor as pretrained one
         steps.add_batch_dim,
-        *(
-            [OpenPIImageResizeProcessorStep(list(config.image_features), config.image_resolution)]
-            if config.openpi_image_resize
-            else []
-        ),
         relative_step,
         # NOTE: NormalizerProcessorStep MUST come before Pi05PrepareStateTokenizerProcessorStep
         # because the tokenizer step expects normalized state in [-1, 1] range for discretization

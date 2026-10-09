@@ -91,10 +91,9 @@ class PI05Config(PreTrainedConfig):
 
     # Opt-in compatibility with OpenPI checkpoints trained with discrete_state_input=False.
     # Existing LeRobot checkpoints retain their serialized processors and default behavior.
-    openpi_text_only: bool = False
+    openpi_prompt_without_state: bool = False
     openpi_tokenizer_revision: str | None = None
     openpi_quantile_normalization: bool = False
-    openpi_image_resize: bool = False
 
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {

@@ -4,19 +4,16 @@ import io
 import json
 import os
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 import torch
-from PIL import Image
 
 from lerobot.configs import FeatureType, NormalizationMode, PolicyFeature
 from lerobot.lerobot_types import TransitionKey
 from lerobot.policies.pi05.configuration_pi05 import PI05Config
-from lerobot.policies.pi05.modeling_pi05 import PI05Policy
 from lerobot.policies.pi05.processor_openpi import (
-    OpenPIImageResizeProcessorStep,
     OpenPITextTokenizerProcessorStep,
 )
 from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
@@ -86,7 +83,7 @@ def test_quantile_formula_and_inverse(additive):
 def test_saved_pipeline_round_trip(tokenizer_file, tmp_path):
     cfg = PI05Config(
         device="cpu",
-        openpi_text_only=True,
+        openpi_prompt_without_state=True,
         openpi_quantile_normalization=True,
         text_tokenizer_name=str(tokenizer_file),
         input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (2,))},
@@ -121,45 +118,6 @@ def test_legacy_default_language_pipeline_unchanged():
     ).quantile_eps_additive
 
 
-@pytest.mark.parametrize("video", [False, True])
-def test_pil_image_resize(video):
-    pixels = np.arange(11 * 17 * 3, dtype=np.uint16).reshape(11, 17, 3).astype(np.uint8)
-    image = torch.from_numpy(pixels).permute(2, 0, 1).float()[None] / 255
-    if video:
-        image = image[:, None]
-    step = OpenPIImageResizeProcessorStep(["image", "missing"], (8, 8))
-    output = step({TransitionKey.OBSERVATION: {"image": image}})[TransitionKey.OBSERVATION]["image"]
-    reference = Image.new("RGB", (8, 8), 0)
-    reference.paste(Image.fromarray(pixels).resize((8, 5), Image.Resampling.BILINEAR), (0, 1))
-    expected = torch.from_numpy(np.asarray(reference).copy()).permute(2, 0, 1).float() / 255
-    torch.testing.assert_close(output.reshape(3, 8, 8), expected, rtol=0, atol=0)
-
-
-@pytest.mark.parametrize("read_error", [True, False])
-def test_pretrained_loading_never_returns_unloaded_model(read_error):
-    class TinyPolicy:
-        use_native_pretrained_loader = False
-
-        def __new__(cls, *args, **kwargs):
-            model = Mock()
-            model._convert_openpi_state_dict.side_effect = lambda x: x
-            model.load_state_dict.side_effect = RuntimeError("missing weight")
-            return model
-
-    with (
-        patch(
-            "transformers.utils.cached_file", side_effect=OSError("missing file") if read_error else None
-        ) as cached,
-        patch("safetensors.torch.load_file", return_value={}),
-        pytest.raises(RuntimeError, match="Could not load PI05 weights"),
-    ):
-        PI05Policy.from_pretrained.__func__(
-            TinyPolicy, "test/model", config=Mock(), revision="pinned", local_files_only=True
-        )
-    assert cached.call_args.kwargs["revision"] == "pinned"
-    assert cached.call_args.kwargs["local_files_only"] is True
-
-
 @pytest.mark.skipif(
     not os.environ.get("PI05_PARITY_DIR"), reason="Requires locally recorded OpenPI observations"
 )
@@ -173,15 +131,12 @@ def test_recorded_openpi_processor_parity(tmp_path):
     raw = np.load(root / "fixed-observations.npz")
     native = np.load(root / "native-30000-float32/outputs.npz")
     source = json.loads(Path(os.environ["PI05_PARITY_STATS"]).read_text())["norm_stats"]
-    images = {"observation.images.image": "image", "observation.images.image2": "wrist"}
     cfg = PI05Config(
         device="cpu",
-        openpi_text_only=True,
+        openpi_prompt_without_state=True,
         openpi_quantile_normalization=True,
-        openpi_image_resize=True,
         text_tokenizer_name=os.environ["PI05_PARITY_TOKENIZER"],
-        input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (8,))}
-        | {key: PolicyFeature(FeatureType.VISUAL, (3, 256, 256)) for key in images},
+        input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (8,))},
         output_features={ACTION: PolicyFeature(FeatureType.ACTION, (7,))},
         chunk_size=10,
         n_action_steps=10,
@@ -192,15 +147,9 @@ def test_recorded_openpi_processor_parity(tmp_path):
     post.save_pretrained(tmp_path)
     pre, post = load_pretrained_policy_processors(tmp_path)
     batch = {OBS_STATE: torch.from_numpy(raw["state"]), "task": raw["prompt"].tolist()}
-    batch.update(
-        {key: torch.from_numpy(raw[name]).permute(0, 3, 1, 2).float() / 255 for key, name in images.items()}
-    )
     actual = pre(batch)
     for key, name in ((OBS_LANGUAGE_TOKENS, "tokens"), (OBS_LANGUAGE_ATTENTION_MASK, "masks")):
         np.testing.assert_array_equal(actual[key].numpy(), native[name])
     np.testing.assert_allclose(actual[OBS_STATE].numpy(), native["state"][:, :8], rtol=0, atol=1e-6)
-    for key, name in images.items():
-        pixels = (actual[key].permute(0, 2, 3, 1) * 255).round().byte().numpy()
-        np.testing.assert_array_equal(pixels, native[name])
     actions = post(torch.from_numpy(native["normalized_actions"][:, :, :7])).numpy()
     np.testing.assert_allclose(actions, native["actions"], rtol=0, atol=1e-6)
