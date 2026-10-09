@@ -257,7 +257,6 @@ class _NormalizationMixin:
         """
         config = {
             "eps": self.eps,
-            "quantile_eps_additive": self.quantile_eps_additive,
             "features": {
                 key: {"type": ft.type.value, "shape": ft.shape} for key, ft in self.features.items()
             },
@@ -267,6 +266,8 @@ class _NormalizationMixin:
         }
         if self.normalize_observation_keys is not None:
             config["normalize_observation_keys"] = sorted(self.normalize_observation_keys)
+        if self.quantile_eps_additive:
+            config["quantile_eps_additive"] = True
         return config
 
     def _normalize_observation(self, observation: RobotObservation, inverse: bool) -> dict[str, Tensor]:

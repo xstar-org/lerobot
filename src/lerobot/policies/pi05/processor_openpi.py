@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import torch
 import numpy as np
+import torch
 from huggingface_hub import hf_hub_download
 from PIL import Image
 

@@ -79,8 +79,13 @@ def main() -> None:
         (OBS_STATE, "state", config.input_features[OBS_STATE]),
         (ACTION, "actions", config.output_features[ACTION]),
     ):
-        stats[key] = {name: torch.tensor(source[source_key][name], dtype=torch.float32) for name in ("q01", "q99")}
-        if any(tuple(value.shape) != feature.shape or not torch.isfinite(value).all() for value in stats[key].values()):
+        stats[key] = {
+            name: torch.tensor(source[source_key][name], dtype=torch.float32) for name in ("q01", "q99")
+        }
+        if any(
+            tuple(value.shape) != feature.shape or not torch.isfinite(value).all()
+            for value in stats[key].values()
+        ):
             raise ValueError(f"{key}: stats must match the unpadded feature dimensions and be finite")
         if torch.any(stats[key]["q99"] < stats[key]["q01"]):
             raise ValueError(f"{key}: q99 must not be below q01")
@@ -95,7 +100,10 @@ def main() -> None:
     manifest = {"action_horizon": args.action_horizon, "discrete_state_input": False, "quantile": True}
     for name, path in (("checkpoint", args.checkpoint), ("stats", args.stats), ("tokenizer", args.tokenizer)):
         with path.open("rb") as stream:
-            manifest[name] = {"source": str(path.resolve()), "sha256": hashlib.file_digest(stream, "sha256").hexdigest()}
+            manifest[name] = {
+                "source": str(path.resolve()),
+                "sha256": hashlib.file_digest(stream, "sha256").hexdigest(),
+            }
     (args.output / "openpi_eval_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Prepared {args.output}; validate camera mapping and run a smoke test before full evaluation.")
 

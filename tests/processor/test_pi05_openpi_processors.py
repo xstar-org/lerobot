@@ -51,7 +51,9 @@ def test_native_text_tokens_and_mask(tokenizer_file, length):
         clean = text.strip().replace("_", " ").replace("\n", " ")
         ids = (reference.encode(clean, add_bos=True) + reference.encode("\n"))[:length]
         assert output[OBS_LANGUAGE_TOKENS][i].tolist() == ids + [0] * (length - len(ids))
-        assert output[OBS_LANGUAGE_ATTENTION_MASK][i].tolist() == [True] * len(ids) + [False] * (length - len(ids))
+        assert output[OBS_LANGUAGE_ATTENTION_MASK][i].tolist() == [True] * len(ids) + [False] * (
+            length - len(ids)
+        )
     assert transition[TransitionKey.OBSERVATION] == {}
     assert transition[TransitionKey.COMPLEMENTARY_DATA]["task"] == tasks
 
@@ -61,13 +63,13 @@ def test_quantile_formula_and_inverse(additive):
     lo = torch.tensor([-1.0, 0.0, 2.0])
     hi = torch.tensor([1.0, 0.0, 2.00001])
     x = torch.tensor([[-3.0, 0.001, 2.00002]])  # Out-of-range values must NOT be clipped.
-    kwargs = dict(
-        features={ACTION: PolicyFeature(FeatureType.ACTION, (3,))},
-        norm_map={FeatureType.ACTION: NormalizationMode.QUANTILES},
-        stats={ACTION: {"q01": lo, "q99": hi}},
-        eps=1e-6,
-        quantile_eps_additive=additive,
-    )
+    kwargs = {
+        "features": {ACTION: PolicyFeature(FeatureType.ACTION, (3,))},
+        "norm_map": {FeatureType.ACTION: NormalizationMode.QUANTILES},
+        "stats": {ACTION: {"q01": lo, "q99": hi}},
+        "eps": 1e-6,
+        "quantile_eps_additive": additive,
+    }
     pre, post = NormalizerProcessorStep(**kwargs), UnnormalizerProcessorStep(**kwargs)
     denom = hi - lo
     denom = denom + 1e-6 if additive else torch.where(denom == 0, 1e-6, denom)
@@ -75,7 +77,7 @@ def test_quantile_formula_and_inverse(additive):
     torch.testing.assert_close(normalized, (x - lo) / denom * 2 - 1, rtol=0, atol=1e-6)
     restored = post._apply_transform(normalized, ACTION, FeatureType.ACTION, inverse=True)
     torch.testing.assert_close(restored, x, rtol=0, atol=1e-6)
-    assert pre.get_config()["quantile_eps_additive"] == additive
+    assert pre.get_config().get("quantile_eps_additive", False) == additive
 
 
 def test_saved_pipeline_round_trip(tokenizer_file, tmp_path):
@@ -111,7 +113,9 @@ def test_legacy_default_language_pipeline_unchanged():
     assert "Pi05PrepareStateTokenizerProcessorStep" in names
     assert "TokenizerProcessorStep" in names
     assert "OpenPITextTokenizerProcessorStep" not in names
-    assert not next(step for step in pre.steps if isinstance(step, NormalizerProcessorStep)).quantile_eps_additive
+    assert not next(
+        step for step in pre.steps if isinstance(step, NormalizerProcessorStep)
+    ).quantile_eps_additive
 
 
 @pytest.mark.parametrize("video", [False, True])
@@ -140,10 +144,14 @@ def test_pretrained_loading_never_returns_unloaded_model(read_error):
             return model
 
     with (
-        patch("transformers.utils.cached_file", side_effect=OSError("missing file") if read_error else None) as cached,
+        patch(
+            "transformers.utils.cached_file", side_effect=OSError("missing file") if read_error else None
+        ) as cached,
         patch("safetensors.torch.load_file", return_value={}),
         pytest.raises(RuntimeError, match="Could not load PI05 weights"),
     ):
-        PI05Policy.from_pretrained.__func__(TinyPolicy, "test/model", config=Mock(), revision="pinned", local_files_only=True)
+        PI05Policy.from_pretrained.__func__(
+            TinyPolicy, "test/model", config=Mock(), revision="pinned", local_files_only=True
+        )
     assert cached.call_args.kwargs["revision"] == "pinned"
     assert cached.call_args.kwargs["local_files_only"] is True
