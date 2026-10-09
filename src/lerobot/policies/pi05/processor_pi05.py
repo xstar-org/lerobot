@@ -21,7 +21,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from lerobot.configs import PipelineFeatureType, PolicyFeature
+from lerobot.configs import NormalizationMode, PipelineFeatureType, PolicyFeature
 from lerobot.lerobot_types import EnvTransition, TransitionKey
 from lerobot.processor import (
     AbsoluteActionsProcessorStep,
@@ -37,6 +37,7 @@ from lerobot.processor import (
 from lerobot.utils.constants import OBS_STATE
 
 from .configuration_pi05 import PI05Config
+from .processor_openpi import OpenPIImageResizeProcessorStep, OpenPITextTokenizerProcessorStep
 
 
 @ProcessorStepRegistry.register(name="pi05_prepare_state_tokenizer_processor_step")
@@ -142,24 +143,50 @@ def make_pi05_pre_post_processors(
 
     steps = make_default_policy_processor_steps(config, dataset_stats)
 
+    if config.openpi_quantile_normalization:
+        for feature_type in ("STATE", "ACTION"):
+            if config.normalization_mapping.get(feature_type) != NormalizationMode.QUANTILES:
+                raise ValueError("OpenPI quantile compatibility requires QUANTILES for STATE and ACTION")
+        for step in (steps.normalize, steps.unnormalize):
+            step.eps = 1e-6
+            step.quantile_eps_additive = True
+
+    if config.openpi_text_only:
+        language_steps = [
+            OpenPITextTokenizerProcessorStep(
+                tokenizer_name=config.text_tokenizer_name,
+                revision=config.openpi_tokenizer_revision,
+                max_length=config.tokenizer_max_length,
+            )
+        ]
+    else:
+        language_steps = [
+            Pi05PrepareStateTokenizerProcessorStep(
+                max_state_dim=config.max_state_dim,
+                include_state_in_prompt=not config.use_proprioceptive_memory,
+            ),
+            TokenizerProcessorStep(
+                tokenizer_name=config.text_tokenizer_name,
+                max_length=config.tokenizer_max_length,
+                padding_side="right",
+                padding="max_length",
+            ),
+        ]
+
     # OpenPI order: raw → relative → normalize → model → unnormalize → absolute
     input_steps: list[ProcessorStep] = [
         steps.rename_observations,  # To mimic the same processor as pretrained one
         steps.add_batch_dim,
+        *(
+            [OpenPIImageResizeProcessorStep(list(config.image_features), config.image_resolution)]
+            if config.openpi_image_resize
+            else []
+        ),
         relative_step,
         # NOTE: NormalizerProcessorStep MUST come before Pi05PrepareStateTokenizerProcessorStep
         # because the tokenizer step expects normalized state in [-1, 1] range for discretization
         steps.normalize,
-        Pi05PrepareStateTokenizerProcessorStep(
-            max_state_dim=config.max_state_dim,
-            include_state_in_prompt=not config.use_proprioceptive_memory,
-        ),
-        TokenizerProcessorStep(
-            tokenizer_name=config.text_tokenizer_name,
-            max_length=config.tokenizer_max_length,
-            padding_side="right",
-            padding="max_length",
-        ),
+        *language_steps,
         steps.to_device,
     ]
 

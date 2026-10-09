@@ -96,6 +96,8 @@ class _NormalizationMixin:
     device: torch.device | str | None = None
     dtype: torch.dtype | None = None
     eps: float = 1e-8
+    # OpenPI adds epsilon to every q99-q01 range, not only zero ranges.
+    quantile_eps_additive: bool = False
     normalize_observation_keys: set[str] | None = None
 
     _tensor_stats: dict[str, dict[str, Tensor]] = field(default_factory=dict, init=False, repr=False)
@@ -255,6 +257,7 @@ class _NormalizationMixin:
         """
         config = {
             "eps": self.eps,
+            "quantile_eps_additive": self.quantile_eps_additive,
             "features": {
                 key: {"type": ft.type.value, "shape": ft.shape} for key, ft in self.features.items()
             },
@@ -395,6 +398,11 @@ class _NormalizationMixin:
                 )
 
             denom = q99 - q01
+            if self.quantile_eps_additive:
+                denom = denom + self.eps
+                if inverse:
+                    return (tensor + 1.0) / 2.0 * denom + q01
+                return (tensor - q01) / denom * 2.0 - 1.0
             # Avoid division by zero by adding epsilon when quantiles are identical
             denom = torch.where(
                 denom == 0, torch.tensor(self.eps, device=tensor.device, dtype=tensor.dtype), denom
