@@ -1,7 +1,6 @@
 """CPU-only tests: no checkpoint download, GPU, simulator, or gated tokenizer required."""
 
 import io
-import json
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -17,7 +16,6 @@ from lerobot.policies.pi05.processor_pi05 import (
     OpenPITextTokenizerProcessorStep,
     make_pi05_pre_post_processors,
 )
-from lerobot.processor import NormalizerProcessorStep, UnnormalizerProcessorStep
 from lerobot.processor.factory import load_pretrained_policy_processors
 from lerobot.utils.constants import ACTION, OBS_LANGUAGE_ATTENTION_MASK, OBS_LANGUAGE_TOKENS, OBS_STATE
 
@@ -58,33 +56,11 @@ def test_native_text_tokens_and_mask(tokenizer_file, length):
     assert transition[TransitionKey.COMPLEMENTARY_DATA]["task"] == tasks
 
 
-@pytest.mark.parametrize("additive", [False, True])
-def test_quantile_formula_and_inverse(additive):
-    lo = torch.tensor([-1.0, 0.0, 2.0])
-    hi = torch.tensor([1.0, 0.0, 2.00001])
-    x = torch.tensor([[-3.0, 0.001, 2.00002]])  # Out-of-range values must NOT be clipped.
-    kwargs = {
-        "features": {ACTION: PolicyFeature(FeatureType.ACTION, (3,))},
-        "norm_map": {FeatureType.ACTION: NormalizationMode.QUANTILES},
-        "stats": {ACTION: {"q01": lo, "q99": hi}},
-        "eps": 1e-6,
-        "quantile_eps_additive": additive,
-    }
-    pre, post = NormalizerProcessorStep(**kwargs), UnnormalizerProcessorStep(**kwargs)
-    denom = hi - lo
-    denom = denom + 1e-6 if additive else torch.where(denom == 0, 1e-6, denom)
-    normalized = pre._apply_transform(x, ACTION, FeatureType.ACTION)
-    torch.testing.assert_close(normalized, (x - lo) / denom * 2 - 1, rtol=0, atol=1e-6)
-    restored = post._apply_transform(normalized, ACTION, FeatureType.ACTION, inverse=True)
-    torch.testing.assert_close(restored, x, rtol=0, atol=1e-6)
-    assert pre.get_config().get("quantile_eps_additive", False) == additive
-
-
 def test_saved_pipeline_round_trip(tokenizer_file, tmp_path):
     cfg = PI05Config(
         device="cpu",
         openpi_prompt_without_state=True,
-        openpi_quantile_normalization=True,
+        normalization_mapping={"STATE": NormalizationMode.QUANTILES, "ACTION": NormalizationMode.QUANTILES},
         text_tokenizer_name=str(tokenizer_file),
         input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (2,))},
         output_features={ACTION: PolicyFeature(FeatureType.ACTION, (2,))},
@@ -113,35 +89,37 @@ def test_legacy_default_language_pipeline_unchanged():
     assert "Pi05PrepareStateTokenizerProcessorStep" in names
     assert "TokenizerProcessorStep" in names
     assert "OpenPITextTokenizerProcessorStep" not in names
-    assert not next(
-        step for step in pre.steps if isinstance(step, NormalizerProcessorStep)
-    ).quantile_eps_additive
 
 
 @pytest.mark.skipif(
     not os.environ.get("PI05_PARITY_DIR"), reason="Requires locally recorded OpenPI observations"
 )
-def test_recorded_openpi_processor_parity(tmp_path):
+def test_recorded_openpi_tokenizer_parity(tmp_path):
     """Optional integration gate against real OpenPI tensors; fixtures are never downloaded.
 
     PI05_PARITY_DIR contains fixed-observations.npz and native-30000-float32/outputs.npz.
-    PI05_PARITY_STATS and PI05_PARITY_TOKENIZER point to the training checkpoint's files.
+    PI05_PARITY_TOKENIZER points to the training tokenizer file.
     """
     root = Path(os.environ["PI05_PARITY_DIR"])
     raw = np.load(root / "fixed-observations.npz")
     native = np.load(root / "native-30000-float32/outputs.npz")
-    source = json.loads(Path(os.environ["PI05_PARITY_STATS"]).read_text())["norm_stats"]
     cfg = PI05Config(
         device="cpu",
         openpi_prompt_without_state=True,
-        openpi_quantile_normalization=True,
+        normalization_mapping={"STATE": NormalizationMode.QUANTILES, "ACTION": NormalizationMode.QUANTILES},
         text_tokenizer_name=os.environ["PI05_PARITY_TOKENIZER"],
         input_features={OBS_STATE: PolicyFeature(FeatureType.STATE, (8,))},
         output_features={ACTION: PolicyFeature(FeatureType.ACTION, (7,))},
         chunk_size=10,
         n_action_steps=10,
     )
-    stats = {OBS_STATE: source["state"], ACTION: source["actions"]}
+    stats = {
+        key: {
+            "q01": torch.zeros(8 if key == OBS_STATE else 7),
+            "q99": torch.ones(8 if key == OBS_STATE else 7),
+        }
+        for key in (OBS_STATE, ACTION)
+    }
     pre, post = make_pi05_pre_post_processors(cfg, stats)
     pre.save_pretrained(tmp_path)
     post.save_pretrained(tmp_path)
@@ -150,6 +128,3 @@ def test_recorded_openpi_processor_parity(tmp_path):
     actual = pre(batch)
     for key, name in ((OBS_LANGUAGE_TOKENS, "tokens"), (OBS_LANGUAGE_ATTENTION_MASK, "masks")):
         np.testing.assert_array_equal(actual[key].numpy(), native[name])
-    np.testing.assert_allclose(actual[OBS_STATE].numpy(), native["state"][:, :8], rtol=0, atol=1e-6)
-    actions = post(torch.from_numpy(native["normalized_actions"][:, :, :7])).numpy()
-    np.testing.assert_allclose(actions, native["actions"], rtol=0, atol=1e-6)

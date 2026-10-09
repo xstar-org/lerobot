@@ -23,7 +23,7 @@ import numpy as np
 import torch
 from huggingface_hub import hf_hub_download
 
-from lerobot.configs import FeatureType, NormalizationMode, PipelineFeatureType, PolicyFeature
+from lerobot.configs import FeatureType, PipelineFeatureType, PolicyFeature
 from lerobot.lerobot_types import EnvTransition, TransitionKey
 from lerobot.processor import (
     AbsoluteActionsProcessorStep,
@@ -214,14 +214,6 @@ def make_pi05_pre_post_processors(
     )
 
     steps = make_default_policy_processor_steps(config, dataset_stats)
-
-    if config.openpi_quantile_normalization:
-        for feature_type in ("STATE", "ACTION"):
-            if config.normalization_mapping.get(feature_type) != NormalizationMode.QUANTILES:
-                raise ValueError("OpenPI quantile compatibility requires QUANTILES for STATE and ACTION")
-        for step in (steps.normalize, steps.unnormalize):
-            step.eps = 1e-6
-            step.quantile_eps_additive = True
 
     if config.openpi_prompt_without_state:
         language_steps = [

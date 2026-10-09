@@ -93,7 +93,6 @@ class PI05Config(PreTrainedConfig):
     # Existing LeRobot checkpoints retain their serialized processors and default behavior.
     openpi_prompt_without_state: bool = False
     openpi_tokenizer_revision: str | None = None
-    openpi_quantile_normalization: bool = False
 
     normalization_mapping: dict[str, NormalizationMode] = field(
         default_factory=lambda: {
